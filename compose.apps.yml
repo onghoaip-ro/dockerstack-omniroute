@@ -5,7 +5,7 @@
 #  Subdomain: ${PROJECT_NAME}.${DOMAIN}
 #
 #  Minimal required env:
-#    APP_PORT, PROJECT_NAME, DOMAIN, CADDY_AUTH_USER, CADDY_AUTH_HASH
+#    APP_PORT, PROJECT_NAME, DOMAIN
 #    OMNIROUTE_JWT_SECRET, OMNIROUTE_API_KEY_SECRET
 #    STORAGE_ENCRYPTION_KEY, OMNIROUTE_INITIAL_PASSWORD
 #    LITESTREAM_S3_ENDPOINT, LITESTREAM_S3_BUCKET,
@@ -40,6 +40,8 @@ services:
       # ── OmniRoute Options ───────────────────────────────────────
       # Tắt auto-backup nội bộ vì litestream đã lo việc này
       OMNIROUTE_DISABLE_AUTO_BACKUP: "true"
+      # Chỉ dùng auth của OmniRoute cho /v1/*
+      REQUIRE_API_KEY: "true"
 
       # ── Litestream / S3 ─────────────────────────────────────────
       # Init mode: true = bỏ qua restore, tạo data mới rồi replicate lên S3
@@ -61,14 +63,10 @@ services:
       # Public HTTP via Cloudflare Tunnel
       - "caddy=http://${PROJECT_NAME}.${DOMAIN}, http://main.${DOMAIN}, http://${DOMAIN}, http://${PROJECT_NAME}.${TAILSCALE_TAILNET_DOMAIN}"
       - "caddy.reverse_proxy={{upstreams ${APP_PORT:-20128}}}"
-      - "caddy.basic_auth=/*"
-      - "caddy.basic_auth.${CADDY_AUTH_USER:-admin}=${CADDY_AUTH_HASH}"
       # Internal HTTPS via Tailscale
       - "caddy_1=https://${PROJECT_NAME:-myapp}.${TAILSCALE_TAILNET_DOMAIN:-tailnet.local}"
       - "caddy_1.tls=internal"
       - "caddy_1.reverse_proxy={{upstreams ${APP_PORT:-20128}}}"
-      - "caddy_1.basic_auth=/*"
-      - "caddy_1.basic_auth.${CADDY_AUTH_USER:-admin}=${CADDY_AUTH_HASH}"
 
     networks: [app_net]
     restart: unless-stopped
