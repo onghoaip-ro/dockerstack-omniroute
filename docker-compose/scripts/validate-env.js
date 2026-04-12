@@ -97,9 +97,18 @@ function isValidHttpsJsonUrl(v) {
   }
 }
 
+function isValidHttpsUrl(v) {
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 // 1) Required core env from compose files
 checkRequired("PROJECT_NAME", "docker project/network + subdomain prefix", (v) =>
-  /^[a-z0-9][a-z0-9-]*$/.test(v) ? null : "only lowercase letters, numbers, hyphen"
+  /^[a-z0-9][a-z0-9-]*$/.test(v) ? null : "only lowercase letters, numbers, hyphen",
 );
 checkRequired("DOMAIN", "root domain", isValidDomain);
 checkRequired("CADDY_EMAIL", "caddy email label", (v) => (v.includes("@") ? null : "invalid email"));
@@ -147,16 +156,12 @@ if ((env.ENABLE_WEBSSH || "true") === "true") {
 
 // 6) Tailscale + keep-ip rules based on compose.access.yml
 if (env.ENABLE_TAILSCALE === "true") {
-  checkRequired("TAILSCALE_AUTHKEY", "required by tailscale service", (v) =>
-    v.startsWith("tskey-") ? null : "must start with tskey-"
-  );
+  checkRequired("TAILSCALE_AUTHKEY", "required by tailscale service", (v) => (v.startsWith("tskey-") ? null : "must start with tskey-"));
   checkRequired("TAILSCALE_TAILNET_DOMAIN", "required by dc.sh to render tailscale/serve.json", (v) =>
-    v && v !== "-" ? null : "must not be empty or '-'"
+    v && v !== "-" ? null : "must not be empty or '-'",
   );
   checkOptional("TAILSCALE_TAGS", "advertise tags", (v) =>
-    /^tag:[A-Za-z0-9][A-Za-z0-9_-]*(,tag:[A-Za-z0-9][A-Za-z0-9_-]*)*$/.test(v)
-      ? null
-      : "format must be tag:a,tag:b"
+    /^tag:[A-Za-z0-9][A-Za-z0-9_-]*(,tag:[A-Za-z0-9][A-Za-z0-9_-]*)*$/.test(v) ? null : "format must be tag:a,tag:b",
   );
 
   const keepIp = (env.TAILSCALE_KEEP_IP_ENABLE || "false").trim();
@@ -169,7 +174,7 @@ if (env.ENABLE_TAILSCALE === "true") {
 
   if (keepIp === "true") {
     checkRequired("TAILSCALE_KEEP_IP_FIREBASE_URL", "required when keep-ip enabled", (v) =>
-      isValidHttpsJsonUrl(v) ? null : "must be https URL ending with .json"
+      isValidHttpsJsonUrl(v) ? null : "must be https URL ending with .json",
     );
     checkOptional("TAILSCALE_KEEP_IP_CERTS_DIR", "certs dir path");
     checkOptional("TAILSCALE_KEEP_IP_INTERVAL_SEC", "backup interval seconds", (v) => {
@@ -192,6 +197,42 @@ if (env.ENABLE_TAILSCALE === "true") {
       errors.push("remove-hostname requires TAILSCALE_AUTHKEY in tskey-client-* format");
     }
   }
+}
+
+// ── 7) OmniRoute required secrets ─────────────────────────────
+checkRequired("OMNIROUTE_JWT_SECRET", "OmniRoute JWT signing secret (openssl rand -base64 48)", (v) =>
+  v.length >= 32 ? null : "must be at least 32 characters",
+);
+checkRequired("OMNIROUTE_API_KEY_SECRET", "OmniRoute API key HMAC secret (openssl rand -hex 32)", (v) =>
+  v.length >= 32 ? null : "must be at least 32 characters",
+);
+checkRequired("STORAGE_ENCRYPTION_KEY", "AES-256-GCM key for credentials (openssl rand -hex 32, KHÔNG ĐỔI sau khi có data)", (v) =>
+  /^[0-9a-fA-F]{64}$/.test(v) ? null : "must be 64 hex characters (32 bytes)",
+);
+checkRequired("OMNIROUTE_INITIAL_PASSWORD", "OmniRoute dashboard initial password");
+checkOptional("STORAGE_ENCRYPTION_KEY_VERSION", "encryption key version (default: v1)");
+checkOptional("OMNIROUTE_BASE_URL", "public base URL for OmniRoute dashboard (https://...) ");
+
+// ── 8) Litestream / S3 required ───────────────────────────────
+checkRequired("LITESTREAM_S3_ENDPOINT", "Supabase S3 endpoint (https://<project>.supabase.co/storage/v1/s3)", (v) =>
+  isValidHttpsUrl(v) ? null : "must be a valid https URL",
+);
+checkRequired("LITESTREAM_S3_BUCKET", "Supabase S3 bucket name");
+checkRequired("LITESTREAM_S3_ACCESS_KEY_ID", "Supabase S3 access key ID");
+checkRequired("LITESTREAM_S3_SECRET_ACCESS_KEY", "Supabase S3 secret access key");
+checkOptional("LITESTREAM_S3_PATH", "S3 path prefix for litestream (default: omniroute/storage.sqlite)");
+
+// LITESTREAM_INIT_MODE phải là false khi deploy thật
+const initMode = (env.LITESTREAM_INIT_MODE || "false").trim();
+if (!isBool(initMode)) {
+  errors.push("LITESTREAM_INIT_MODE must be true|false");
+} else if (initMode === "true") {
+  warnings.push(
+    "LITESTREAM_INIT_MODE=true — container sẽ bỏ qua restore S3 và tạo data mới. " +
+    "CHỈ dùng local để init, KHÔNG deploy với giá trị này.",
+  );
+} else {
+  ok.push("LITESTREAM_INIT_MODE=false (normal restore mode)");
 }
 
 const project = env.PROJECT_NAME || "<project>";

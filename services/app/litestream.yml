@@ -1,0 +1,23 @@
+# ================================================================
+#  /etc/litestream.yml — Litestream Replication Config
+#  Tất cả giá trị nhạy cảm đều đọc từ environment variables.
+#
+#  Biến bắt buộc:
+#    LITESTREAM_S3_ENDPOINT      — Supabase: https://<id>.supabase.co/storage/v1/s3
+#    LITESTREAM_S3_BUCKET        — Tên bucket trong Supabase Storage
+#    LITESTREAM_S3_PATH          — Prefix path trong bucket (mặc định: omniroute/storage.sqlite)
+#    LITESTREAM_S3_ACCESS_KEY_ID — Supabase S3 access key
+#    LITESTREAM_S3_SECRET_ACCESS_KEY — Supabase S3 secret key
+# ================================================================
+
+dbs:
+  - path: /app/data/storage.sqlite
+    replicas:
+      - type: s3
+        endpoint: ${LITESTREAM_S3_ENDPOINT}
+        bucket: ${LITESTREAM_S3_BUCKET}
+        path: ${LITESTREAM_S3_PATH}
+        access-key-id: ${LITESTREAM_S3_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_S3_SECRET_ACCESS_KEY}
+        # Sync interval — đủ nhanh để không mất quá nhiều data khi node bị kill
+        sync-interval: 10s

@@ -2,6 +2,38 @@
 
 ---
 
+## [2026-04-12] swap-app-omniroute-litestream
+
+### Changed
+
+- `compose.apps.yml`: Thay app service → OmniRoute (`diegosouzapw/omniroute:latest`) với litestream wrapper
+  - `stop_grace_period: 40s` để flush WAL trước khi node bị replace
+  - Volume bind: `.docker-volumes/app/data:/app/data`
+  - Health check: `wget http://localhost:${APP_PORT}/`
+  - Env: `OMNIROUTE_DISABLE_AUTO_BACKUP=true` (litestream lo backup)
+- `services/app/Dockerfile`: Multi-stage build — copy litestream binary từ `litestream/litestream:0.3.13`, wrap trên `diegosouzapw/omniroute:latest`
+- `services/app/entrypoint.sh`: Restore logic — fail hard nếu không có S3 data (normal mode); skip nếu `LITESTREAM_INIT_MODE=true`
+- `services/app/litestream.yml`: Config litestream với S3 endpoint/bucket/path qua env vars, `sync-interval: 10s`
+- `docker-compose/scripts/validate-env.js`: Thêm validation cho `OMNIROUTE_JWT_SECRET`, `OMNIROUTE_API_KEY_SECRET`, `STORAGE_ENCRYPTION_KEY` (64 hex chars), `OMNIROUTE_INITIAL_PASSWORD`, `LITESTREAM_S3_*`
+- `.env.example`: Thêm section OmniRoute + Litestream/Supabase S3
+- `docs/services/app.md`: Rewrite hoàn toàn cho OmniRoute
+- `docker-compose/scripts/dc.sh`: `prepare_docker_volume_dirs` — đổi `app/logs` → `app/data`
+
+### Added
+
+- `scripts/init-omniroute.sh`: Helper script cho workflow init lần đầu (validate env → start với LITESTREAM_INIT_MODE=true → hướng dẫn user)
+
+### Removed
+
+- `services/app/index.js`: Không còn cần (dùng omniroute image)
+- `services/app/package.json`: Không còn cần
+
+### Notes
+
+- `STORAGE_ENCRYPTION_KEY` phải stable — không đổi sau khi có data
+- `APP_PORT` default đổi thành `20128` (port mặc định của OmniRoute)
+- `LITESTREAM_INIT_MODE` chỉ dùng local, không deploy với `true`
+
 ## [2.0.0] — 2026-04-09
 
 ### Breaking Changes

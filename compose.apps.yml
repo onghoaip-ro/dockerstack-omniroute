@@ -1,12 +1,19 @@
 # ================================================================
 #  compose.apps.yml — Application Layer
-#  Builds the bundled sample app from ./services/app
+#  App: OmniRoute (AI Gateway) + Litestream (SQLite → S3 sync)
 #
 #  Subdomain: ${PROJECT_NAME}.${DOMAIN}
 #
 #  Minimal required env:
-#    APP_PORT   — Port app listens on inside container
-#    PROJECT_NAME, DOMAIN, CADDY_AUTH_USER, CADDY_AUTH_HASH
+#    APP_PORT, PROJECT_NAME, DOMAIN, CADDY_AUTH_USER, CADDY_AUTH_HASH
+#    OMNIROUTE_JWT_SECRET, OMNIROUTE_API_KEY_SECRET
+#    STORAGE_ENCRYPTION_KEY, OMNIROUTE_INITIAL_PASSWORD
+#    LITESTREAM_S3_ENDPOINT, LITESTREAM_S3_BUCKET,
+#    LITESTREAM_S3_ACCESS_KEY_ID, LITESTREAM_S3_SECRET_ACCESS_KEY
+#
+#  Startup behavior:
+#    - Normal: restore SQLite từ S3 trước, lỗi nếu không có data → exit 1
+#    - Init:   LITESTREAM_INIT_MODE=true → bỏ qua restore, tạo data mới
 # ================================================================
 
 services:
@@ -16,33 +23,66 @@ services:
       context: ./services/app
       dockerfile: Dockerfile
     environment:
+      # ── OmniRoute Core ──────────────────────────────────────────
+      PORT: "${APP_PORT:-20128}"
+      HOSTNAME: "0.0.0.0"
       NODE_ENV: "${NODE_ENV:-production}"
-      PORT: "${APP_PORT:-3000}"
+      NEXT_PUBLIC_BASE_URL: "${OMNIROUTE_BASE_URL:-http://localhost:20128}"
+      DATA_DIR: "/app/data"
+
+      # ── OmniRoute Secrets (KHÔNG ĐỔI sau khi có data) ──────────
+      JWT_SECRET: "${OMNIROUTE_JWT_SECRET}"
+      API_KEY_SECRET: "${OMNIROUTE_API_KEY_SECRET}"
+      STORAGE_ENCRYPTION_KEY: "${STORAGE_ENCRYPTION_KEY}"
+      STORAGE_ENCRYPTION_KEY_VERSION: "${STORAGE_ENCRYPTION_KEY_VERSION:-v1}"
+      INITIAL_PASSWORD: "${OMNIROUTE_INITIAL_PASSWORD}"
+
+      # ── OmniRoute Options ───────────────────────────────────────
+      # Tắt auto-backup nội bộ vì litestream đã lo việc này
+      OMNIROUTE_DISABLE_AUTO_BACKUP: "true"
+
+      # ── Litestream / S3 ─────────────────────────────────────────
+      # Init mode: true = bỏ qua restore, tạo data mới rồi replicate lên S3
+      #            false = bắt buộc restore từ S3, exit 1 nếu không có
+      LITESTREAM_INIT_MODE: "${LITESTREAM_INIT_MODE:-false}"
+      LITESTREAM_S3_ENDPOINT: "${LITESTREAM_S3_ENDPOINT}"
+      LITESTREAM_S3_BUCKET: "${LITESTREAM_S3_BUCKET}"
+      LITESTREAM_S3_PATH: "${LITESTREAM_S3_PATH:-omniroute/storage.sqlite}"
+      LITESTREAM_S3_ACCESS_KEY_ID: "${LITESTREAM_S3_ACCESS_KEY_ID}"
+      LITESTREAM_S3_SECRET_ACCESS_KEY: "${LITESTREAM_S3_SECRET_ACCESS_KEY}"
+
     ports:
-      - "127.0.0.1:${APP_HOST_PORT:-3000}:${APP_PORT:-3000}"
+      - "127.0.0.1:${APP_HOST_PORT:-20128}:${APP_PORT:-20128}"
+
     volumes:
-      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/logs:/app/logs
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/data:/app/data
+
     labels:
-      # Public HTTP sites behind Cloudflare Tunnel.
+      # Public HTTP via Cloudflare Tunnel
       - "caddy=http://${PROJECT_NAME}.${DOMAIN}, http://main.${DOMAIN}, http://${DOMAIN}, http://${PROJECT_NAME}.${TAILSCALE_TAILNET_DOMAIN}"
-      - "caddy.reverse_proxy={{upstreams ${APP_PORT:-3000}}}"
+      - "caddy.reverse_proxy={{upstreams ${APP_PORT:-20128}}}"
       - "caddy.basic_auth=/*"
       - "caddy.basic_auth.${CADDY_AUTH_USER:-admin}=${CADDY_AUTH_HASH}"
-      # Internal HTTPS site for Tailscale / trusted LAN access.
+      # Internal HTTPS via Tailscale
       - "caddy_1=https://${PROJECT_NAME:-myapp}.${TAILSCALE_TAILNET_DOMAIN:-tailnet.local}"
       - "caddy_1.tls=internal"
-      - "caddy_1.reverse_proxy={{upstreams ${APP_PORT:-3000}}}"
+      - "caddy_1.reverse_proxy={{upstreams ${APP_PORT:-20128}}}"
       - "caddy_1.basic_auth=/*"
       - "caddy_1.basic_auth.${CADDY_AUTH_USER:-admin}=${CADDY_AUTH_HASH}"
+
     networks: [app_net]
     restart: unless-stopped
+
+    # Litestream cần 30-40s để flush WAL cuối cùng lên S3 trước khi tắt
+    stop_grace_period: 40s
+
     healthcheck:
       test:
         - "CMD"
         - "sh"
         - "-c"
-        - "wget -qO- http://localhost:${APP_PORT:-3000}${HEALTH_PATH:-/health} || exit 1"
+        - "wget -qO- http://localhost:${APP_PORT:-20128}/ > /dev/null || exit 1"
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s

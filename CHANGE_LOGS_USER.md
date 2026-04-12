@@ -2,6 +2,20 @@
 
 ---
 
+## [2026-04-12] OmniRoute AI Gateway
+
+### Tính năng mới
+
+- **OmniRoute** thay thế app cũ: dashboard AI gateway tại `http://<domain>` với 36+ providers (Claude, Gemini, OpenAI, Groq, iFlow...)
+- **Tự động backup dữ liệu**: Mọi cấu hình (providers, combos, API keys) được sync lên Supabase S3 theo thời gian thực — không mất data khi node restart
+- **Khôi phục tự động**: Node mới khởi động sẽ tự restore dữ liệu từ S3 trước khi mở cổng
+- **Init script**: `scripts/init-omniroute.sh` để cấu hình lần đầu dễ dàng
+
+### Thay đổi cấu hình
+
+- `APP_PORT` đổi thành `20128` (port mặc định OmniRoute)
+- Cần bổ sung các biến môi trường mới vào `.env` và CI secrets (xem `docs/services/app.md`)
+
 ## [2.0.0] — 2026-04-09 — Modular Stack Template
 
 ### What's New

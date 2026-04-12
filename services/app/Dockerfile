@@ -1,25 +1,31 @@
-FROM node:20-alpine
+# ================================================================
+#  services/app/Dockerfile
+#  Wrap diegosouzapw/omniroute với litestream binary
+#
+#  Image gốc:
+#    ENTRYPOINT = ["docker-entrypoint.sh"]
+#    CMD        = ["node", "run-standalone.mjs"]
+#    WORKDIR    = /app
+#
+#  Startup flow:
+#    entrypoint.sh → restore/skip S3 → litestream replicate
+#      → docker-entrypoint.sh node run-standalone.mjs
+# ================================================================
 
-# Tạo user không phải root để bảo mật
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# ── Stage 1: lấy litestream binary ────────────────────────────
+FROM litestream/litestream:0.3.13 AS litestream-bin
 
-WORKDIR /app
+# ── Stage 2: wrap omniroute ────────────────────────────────────
+FROM diegosouzapw/omniroute:latest
 
-# Copy package files trước để tận dụng Docker cache
-COPY package*.json ./
-RUN npm install --omit=dev && npm cache clean --force
+# Copy litestream binary từ stage 1
+COPY --from=litestream-bin /usr/local/bin/litestream /usr/local/bin/litestream
 
-# Copy source code
-COPY . .
+# Copy litestream config và entrypoint của chúng ta
+COPY litestream.yml /etc/litestream.yml
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# Tạo thư mục log và phân quyền
-RUN mkdir -p /app/logs && chown -R appuser:appgroup /app
-
-USER appuser
-
-EXPOSE 3000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
-
-CMD ["node", "index.js"]
+# Override ENTRYPOINT; giữ nguyên CMD từ image gốc (node run-standalone.mjs)
+# CMD sẽ được forward qua $@ vào litestream replicate -- docker-entrypoint.sh "$@"
+ENTRYPOINT ["/entrypoint.sh"]
