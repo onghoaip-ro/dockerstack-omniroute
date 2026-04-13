@@ -5,9 +5,9 @@
 name: docker-stack-template
 
 on:
-  # push:
-  #   branches: ["main"]
   workflow_dispatch:
+  # schedule:
+  #   - cron: "*/58 * * * *"
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
